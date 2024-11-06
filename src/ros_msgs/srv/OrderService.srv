@@ -1,0 +1,7 @@
+# 요청(Request)
+string order_detail  # 주문의 세부 사항
+
+---
+# 응답(Response)
+bool success         # 요청 성공 여부
+string message       # 응답 메시지
