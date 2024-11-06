@@ -1,5 +1,6 @@
 ### 2024 두산 로보틱스 팀 프로젝트 
-![image](https://github.com/user-attachments/assets/ff7f6d89-8bcd-4715-bbbd-9d4be2b6c190)
+![image](https://github.com/user-attachments/assets/ff7f6d89-8bcd-4715-bbbd-9d4be2b6c190  
+![image](https://github.com/user-attachments/assets/53f0cbc9-a021-48ad-903a-322c401606b5)
 
 1. 기간: 2024.11.05 ~ 12.31
 
