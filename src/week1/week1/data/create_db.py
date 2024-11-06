@@ -1,7 +1,7 @@
 import sqlite3
 
 def create_current_table_orders_db():
-    conn = sqlite3.connect("current_table_orders.db")
+    conn = sqlite3.connect("./src/week1/current_table_orders.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS current_table_orders (
@@ -16,7 +16,7 @@ def create_current_table_orders_db():
     print("current_table_orders.db 생성 완료")
 
 def create_full_order_history_db():
-    conn = sqlite3.connect("full_order_history.db")
+    conn = sqlite3.connect("./src/week1/full_order_history.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS full_order_history (

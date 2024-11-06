@@ -3,7 +3,7 @@ import pandas as pd
 
 class TotalTable:
     def __init__(self):
-        self.conn = sqlite3.connect("full_order_history.db")
+        self.conn = sqlite3.connect("./src/week1/full_order_history.db")
         self.cursor = self.conn.cursor()
     
     def del_table_order_all(self, table_id):
@@ -27,7 +27,7 @@ class TotalTable:
 
 class Analysis:
     def __init__(self):
-        self.conn = sqlite3.connect("full_order_history.db")
+        self.conn = sqlite3.connect("./src/week1/full_order_history.db")
         self.cursor = self.conn.cursor()
 
     def analyze_orders(self):

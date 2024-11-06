@@ -2,7 +2,7 @@ import sqlite3
 import pandas as pd
 class CurrentTable():
     def __init__(self):
-        self.conn = sqlite3.connect("current_table_orders.db")
+        self.conn = sqlite3.connect("./src/week1/current_table_orders.db")
         self.cursor = self.conn.cursor()
 
     def show_table_orders(self):

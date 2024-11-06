@@ -10,13 +10,13 @@ from tkinter import messagebox, Toplevel
 import tkinter as tk
 import sqlite3
 from .order_service import MenuNode  # MenuNode를 가져옴
-from data.table_utils import Show
+from .data.table_utils import Show
 
 class KitGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("테이블 및 좌석 현황 GUI")
-        self.root.geometry("600x400")
+        self.root.geometry("1600x1000")
 
         # 테이블 주문 현황 표시 프레임
         self.main_frame = tk.Frame(self.root, borderwidth=2, relief="solid")
@@ -103,6 +103,8 @@ class KitNode(Node):
         response.success = True
         response.message = "Order received and displayed in GUI."
         return response
+    
+    
 
 # GUI 및 ROS 2 노드 실행
 def main():

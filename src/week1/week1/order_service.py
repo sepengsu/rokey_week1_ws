@@ -1,8 +1,6 @@
 import rclpy
 from rclpy.node import Node
 import sys, os
-sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
-sys.path.append("/home/jaenote/rokey_ros/src")
 from ros_msgs.srv import OrderService
 
 class MenuNode(Node):
@@ -30,7 +28,7 @@ def main(args=None):
     rclpy.init(args=args)
     node = MenuNode()
     # 예시로 주문 요청을 전송
-    node.send_order_request("테이블 5번 주문 요청")
+    node.send_order_request("(5, '아메리카노', 2)")
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
