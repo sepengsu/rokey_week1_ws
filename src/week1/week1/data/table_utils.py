@@ -46,7 +46,7 @@ class Delete:
     '''
     주문을 취소하기 위한 작업
     '''
-    def delete_table_order_all(self, table_id):
+    def delete_table_order(self, table_id):
         ''' 테이블 주문 정보 삭제 '''
         cur_table = CurrentTable()
         cur_table.del_table_order_all(table_id)

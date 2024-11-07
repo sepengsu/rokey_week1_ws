@@ -8,7 +8,7 @@ from rclpy.node import Node
 from ros_msgs.srv import OrderService  # OrderService 서비스 메시지 임포트
 from tkinter import Toplevel
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import simpledialog
 from .order_service import MenuNode  # MenuNode를 가져옴
 from .data.table_utils import Show, Insert, Delete
 import sqlite3
@@ -39,18 +39,11 @@ class KitGUI:
 
         # FIFO 주문 큐 표시
         self.fifo_frame = tk.Frame(self.root, borderwidth=2, relief="solid")
-        self.fifo_frame.grid(row=0, column=1, padx=10, pady=10, sticky="n")
+        self.fifo_frame.grid(row=0, column=1, padx=10, pady=10)
         self.fifo_label = tk.Label(self.fifo_frame, text="주문 큐", font=("Arial", 14))
         self.fifo_label.pack()
         self.fifo_listbox = tk.Listbox(self.fifo_frame, height=15, width=30)
         self.fifo_listbox.pack(padx=10, pady=10)
-
-        # 3x3 숫자 버튼을 위한 프레임 (FIFO 오른쪽에 배치)
-        self.seat_frame = tk.Frame(self.root, borderwidth=2, relief="solid")
-        self.seat_frame.grid(row=0, column=2, padx=10, pady=10, sticky="n")
-
-        # 3x3 숫자 버튼 생성
-        self.create_number_buttons(3, 3)
 
     def display_table_orders(self):
         """테이블 라벨 생성 및 초기화."""
@@ -243,23 +236,7 @@ class KitGUI:
         for order in self.orders:
             self.fifo_listbox.insert(tk.END, f"테이블 {order['table']} - {order['order_detail']} - ETA: {order['eta']}분")
 
-    def create_number_buttons(self, rows, cols):
-        """숫자 버튼을 생성합니다."""
-        for i in range(rows):
-            for j in range(cols):
-                num = i * cols + j + 1
-                button = tk.Button(self.seat_frame, text=str(num), width=5, height=2,
-                                   command=lambda n=num: self.prompt_transport(n))
-                button.grid(row=i, column=j, padx=5, pady=5)
 
-    def prompt_transport(self, number):
-        """운반 작업 확인 창을 엽니다."""
-        response = messagebox.askokcancel("운반 확인", f"{number}번에 운반하겠습니까?")
-        if response:
-            print(f"{number}번에 운반합니다.")
-        '''
-        운반 관련 action을 수행하는 코드를 여기에 추가
-        '''
 class KitNode(Node):
     def __init__(self, gui: KitGUI):
         super().__init__("kit_node")

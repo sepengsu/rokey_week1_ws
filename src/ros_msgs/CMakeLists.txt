@@ -25,6 +25,7 @@ set(srv_files
 
 set(action_files
   # "action/MyAction.action"
+  "action/TransportAction.action"
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}

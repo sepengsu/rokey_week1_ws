@@ -1,0 +1,14 @@
+# Goal 정의 (로봇 운송 요청)
+int32 table_index  # 운송 대상 테이블 번호
+
+---
+
+# Result 정의 (운송 완료 후 결과)
+bool success  # 운송 성공 여부
+string message  # 결과 메시지
+
+---
+
+# Feedback 정의 (운송 중 피드백)
+float32 progress  # 운송 진행률 (0.0 ~ 100.0)
+string status  # 현재 상태 (예: "운송 중", "목표 도착 중")
