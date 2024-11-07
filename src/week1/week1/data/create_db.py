@@ -8,7 +8,7 @@ def create_current_table_orders_db():
             table_id INTEGER PRIMARY KEY,
             menu_id STRING,
             quantity INTEGER,
-            order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP 
         )
     """)
     conn.commit()

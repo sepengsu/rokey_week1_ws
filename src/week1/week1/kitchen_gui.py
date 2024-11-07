@@ -9,7 +9,6 @@ from ros_msgs.srv import OrderService  # OrderService 서비스 메시지 임포
 from tkinter import Toplevel
 import tkinter as tk
 from tkinter import messagebox
-from .order_service import MenuNode  # MenuNode를 가져옴
 from .data.table_utils import Show, Insert, Delete
 import sqlite3
 import time
@@ -52,6 +51,11 @@ class KitGUI:
         # 3x3 숫자 버튼 생성
         self.create_number_buttons(3, 3)
 
+        # "오늘의 매출" 버튼 생성
+        self.sales_button = tk.Button(self.root, text="오늘의 매출", font=("Arial", 14), command=self.show_today_sales)
+        self.sales_button.grid(row=2, column=0, columnspan=3, pady=10)
+
+    # 주문 관련 함수
     def display_table_orders(self):
         """테이블 라벨 생성 및 초기화."""
         for i in range(3):
@@ -64,7 +68,8 @@ class KitGUI:
                 table_label.grid(row=i, column=j, padx=5, pady=5)
                 self.table_labels[table_index] = table_label  # 딕셔너리에 저장
 
-
+    
+        # 주문관련 함수  
     def show_order_popup(self, table_index, message):
         """주문 요청 팝업 창."""
         # 팝업 창 생성
@@ -94,7 +99,6 @@ class KitGUI:
             text="거절",
             command=lambda: self.handle_cancel_order(table_index, popup))
         reject_button.pack(side="right", padx=5)
-
     def handle_accept_order(self, table_index, message, popup):
         """주문 수락 처리."""
         popup.destroy()  # 팝업 닫기
@@ -103,12 +107,10 @@ class KitGUI:
         # ROS2 서비스 응답 설정
         with self.condition:
             self.condition.notify()
-
     def handle_cancel_order(self, table_index, popup):
         """주문 거절 처리."""
         popup.destroy()  # 팝업 닫기
         self.cancel_order(table_index)  # 주문 취소 처리
-
     def accept_order(self, table_index, order_detail):
         """주문 수락 및 타이머 시작."""
         if table_index not in self.table_labels:
@@ -137,8 +139,6 @@ class KitGUI:
         # ROS2 서비스 응답 설정
         with self.condition:
             self.condition.notify()
-
-        
     def cancel_order(self, table_index):
         """주문 취소."""
         if table_index not in self.table_labels:
@@ -194,8 +194,6 @@ class KitGUI:
                 width=20
             )
             reason_button.pack(pady=5)
-
-
     def start_timer(self, table_index, eta):
         """타이머 시작."""
         def countdown():
@@ -209,7 +207,6 @@ class KitGUI:
 
         self.root.after(60000, countdown)
         return countdown
-
     def update_order_eta(self, table_index, eta):
         """ETA 업데이트."""
         if table_index not in self.table_labels:
@@ -227,7 +224,6 @@ class KitGUI:
                 order["eta"] = eta
                 break
         self.update_fifo_listbox()
-
     def complete_order(self, table_index):
         """주문 완료 처리."""
         if table_index not in self.table_labels:
@@ -236,13 +232,13 @@ class KitGUI:
 
         table_label = self.table_labels[table_index]
         table_label.config(text=f"테이블 {table_index}\n주문 없음")
-
     def update_fifo_listbox(self):
         """FIFO 큐 GUI 업데이트."""
         self.fifo_listbox.delete(0, tk.END)
         for order in self.orders:
             self.fifo_listbox.insert(tk.END, f"테이블 {order['table']} - {order['order_detail']} - ETA: {order['eta']}분")
 
+    # 운송 관련 함수
     def create_number_buttons(self, rows, cols):
         """숫자 버튼을 생성합니다."""
         for i in range(rows):
@@ -260,6 +256,38 @@ class KitGUI:
         '''
         운반 관련 action을 수행하는 코드를 여기에 추가
         '''
+
+
+    def show_today_sales(self):
+        """오늘의 매출을 표시하는 창을 띄웁니다."""
+        # SQLite에서 오늘의 매출 데이터를 가져오기
+        # conn = sqlite3.connect("orders.db")
+        # cursor = conn.cursor()
+
+        # # 오늘 날짜 가져오기
+        # today = time.strftime('%Y-%m-%d')
+        # query = f"SELECT SUM(amount) FROM sales WHERE date(created_at) = '{today}'"
+
+        # try:
+        #     cursor.execute(query)
+        #     total_sales = cursor.fetchone()[0] or 0  # 매출 합계 (없으면 0으로 표시)
+        # except sqlite3.OperationalError as e:
+        #     total_sales = 0
+        #     print(f"Database error: {e}")
+
+        # conn.close()
+        total_sales = 1000
+
+        # 매출 표시 팝업 창
+        popup = Toplevel(self.root)
+        popup.geometry("300x150")
+        popup.title("오늘의 매출")
+
+        label = tk.Label(popup, text=f"오늘의 매출: {total_sales} 원", font=("Arial", 14))
+        label.pack(pady=20)
+
+        close_button = tk.Button(popup, text="닫기", command=popup.destroy)
+        close_button.pack(pady=10)
 class KitNode(Node):
     def __init__(self, gui: KitGUI):
         super().__init__("kit_node")
