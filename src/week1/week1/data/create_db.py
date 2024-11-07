@@ -5,10 +5,10 @@ def create_current_table_orders_db():
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS current_table_orders (
-            table_id INTEGER PRIMARY KEY,
+            table_id INTEGER,
             menu_id STRING,
             quantity INTEGER,
-            order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP 
+            order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP PRIMARY KEY 
         )
     """)
     conn.commit()

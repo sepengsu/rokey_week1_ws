@@ -288,6 +288,7 @@ class KitGUI:
 
         close_button = tk.Button(popup, text="닫기", command=popup.destroy)
         close_button.pack(pady=10)
+
 class KitNode(Node):
     def __init__(self, gui: KitGUI):
         super().__init__("kit_node")
@@ -327,7 +328,6 @@ def main():
 
     root.protocol("WM_DELETE_WINDOW", lambda: on_close(kit_node, executor))
     root.mainloop()
-
 
 def on_close(node, executor):
     executor.shutdown()

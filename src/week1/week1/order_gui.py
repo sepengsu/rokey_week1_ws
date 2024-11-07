@@ -165,7 +165,7 @@ class KioskGUI:
         self.update_total_price()
         self.update_cart_display()
 
-class OrderClientNode(Node):
+class OrderNode(Node):
     def __init__(self, response_queue: Queue):
         super().__init__('order_client')
         self.client = self.create_client(OrderService, 'order_service')
@@ -210,7 +210,7 @@ def main():
     response_queue = Queue()
     
     # ROS2 노드 생성
-    ros_node = OrderClientNode(response_queue)
+    ros_node = OrderNode(response_queue)
     
     # Tkinter GUI 초기화
     root = tk.Tk()

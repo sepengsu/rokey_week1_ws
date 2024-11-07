@@ -3,7 +3,7 @@ from .cur_table import CurrentTable
 from .total_table import TotalTable
 
 menu_items = [
-    ("5가지 샐러드", 12000, "채소 종류"),
+    ("오색 샐러드", 12000, "채소 종류"),
     ("카프레제 샐러드", 12000, "채소 종류"),
     ("그린 샐러드", 8000, "채소 종류"),
     ("과일 샐러드", 13000, "채소 종류"),

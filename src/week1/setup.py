@@ -23,9 +23,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'order_service = week1.order_service:main',
             'kitchen_gui = week1.kitchen_gui:main',
             'order_gui = week1.order_gui:main',
+            'turtlebot3_gui = week1.turtlebot3_gui:main',
         ],
     },
 )
