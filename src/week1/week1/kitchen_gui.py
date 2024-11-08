@@ -63,7 +63,7 @@ class KitGUI:
                 self.table_labels[table_index] = table_label
 
     def show_order_popup(self, table_index, message, response):
-        """주문 요청 팝업."""
+        """주문 요청 팝업"""
         popup = Toplevel(self.root)
         popup.geometry("400x200")
         popup.title(f"Table {table_index}에서의 새 주문 요청")
@@ -91,6 +91,7 @@ class KitGUI:
             command=lambda: self.handle_reject_order(table_index, popup, response)
         )
         reject_button.pack(side="right", padx=5)
+
 
     def handle_accept_order(self, table_index, message, popup, response):
         """주문 수락 처리."""
@@ -130,19 +131,22 @@ class KitGUI:
 
     def handle_reject_order(self, table_index, popup, response):
         """주문 거절 처리."""
-        popup.destroy()
-        self.cancel_order(table_index,)
+        popup.destroy()  # 팝업 닫기
+        self.cancel_order(table_index, response)  # response를 전달
 
         # response 설정
         response.success = False
-        response.message = f"Order for Table {table_index} rejected. Reason: {self.reason}"
+        response.message = f"Order for Table {table_index} rejected."
         self.node.get_logger().info(response.message)
+
 
     
     def cancel_order(self, table_index, response):
         """주문 취소."""
         if table_index not in self.table_labels:
             print(f"[ERROR] Invalid table index: {table_index}")
+            response.success = False
+            response.message = f"Invalid table index: {table_index}"
             return
 
         # 팝업 창 생성
@@ -159,26 +163,6 @@ class KitGUI:
 
         # 취소 사유 리스트
         reasons = ["재료 부족", "고객 요청", "기타"]
-
-        def handle_reason_select(reason):
-            """사유 선택 시 호출."""
-            selected_reason.set(reason)
-
-        # 취소 사유 버튼 생성
-        for reason in reasons:
-            reason_button = tk.Radiobutton(
-                popup,
-                text=reason,
-                variable=selected_reason,
-                value=reason,
-                font=("Arial", 10),
-                anchor="w"
-            )
-            reason_button.pack(anchor="w", padx=10, pady=2)
-
-        # 버튼 프레임
-        button_frame = tk.Frame(popup)
-        button_frame.pack(pady=20)
 
         def handle_confirm():
             """확인 버튼 동작."""
@@ -207,6 +191,21 @@ class KitGUI:
             response.message = f"Order for Table {table_index} rejected. Reason: {reason}"
             self.node.get_logger().info(response.message)
 
+        # 취소 사유 버튼 생성
+        for reason in reasons:
+            tk.Radiobutton(
+                popup,
+                text=reason,
+                variable=selected_reason,
+                value=reason,
+                font=("Arial", 10),
+                anchor="w"
+            ).pack(anchor="w", padx=10, pady=2)
+
+        # 버튼 프레임
+        button_frame = tk.Frame(popup)
+        button_frame.pack(pady=20)
+
         # 확인 버튼
         confirm_button = tk.Button(button_frame, text="확인", command=handle_confirm, width=10)
         confirm_button.pack(side="left", padx=10)
@@ -214,6 +213,7 @@ class KitGUI:
         # 취소 버튼
         cancel_button = tk.Button(button_frame, text="취소", command=popup.destroy, width=10)
         cancel_button.pack(side="right", padx=10)
+
 
 
     def start_timer(self, table_index, eta):
@@ -262,19 +262,23 @@ class KitGUI:
             self.fifo_listbox.insert(tk.END, f"테이블 {order['table']} - {order['order_detail']} - ETA: {order['eta']}분")
     
     def poll_events(self):
-        """이벤트 큐 확인."""
+        """이벤트 큐를 지속적으로 확인"""
         try:
             while True:
+                # 큐에서 이벤트를 가져옴
                 event = self.event_queue.get_nowait()
+
+                # 이벤트 처리 (여기서는 주문 팝업 처리)
                 if event["type"] == "order_request":
                     self.show_order_popup(event["table_index"], event["message"], event["response"])
+
+                # 이벤트 처리 완료 표시
+                self.event_queue.task_done()
         except queue.Empty:
             pass
         finally:
-            # 100ms마다 큐 확인
+            # 100ms마다 이벤트 큐 확인
             self.root.after(100, self.poll_events)
-
-
 
     def create_number_buttons(self, rows, cols):
         """숫자 버튼 생성."""
@@ -308,6 +312,7 @@ class KitNode(Node):
         super().__init__("kit_node")
         self.event_queue = event_queue  # GUI와 통신할 이벤트 큐
         self.order_service = self.create_service(OrderService, 'order_service', self.handle_order_request)
+        self.is_processing_request = False
 
         # Action client
         self.len = 10
@@ -390,29 +395,51 @@ class KitNode(Node):
         self.navigate_to_pose_action_client.send_goal_async(return_goal_msg)
 
     def handle_order_request(self, request, response):
-        """ROS2 서비스 요청 처리."""
-        table_index = request.table_index
-        order_detail = request.order_detail
+        """주문 요청 처리 (동기 처리)"""
+        if self.is_processing_request:
+            # 이미 요청 처리 중인 경우 로그 출력
+            self.get_logger().warn("A request is already being processed. Ignoring new request.")
+            response.success = False
+            response.message = "Server busy. Try again later."
+            return response
 
-        # GUI에 이벤트 전달 (response 포함)
+        # 요청 처리 시작
+        self.is_processing_request = True
+        self.get_logger().info(f"Processing request for Table {request.table_index}")
+
+        # 이벤트 큐에 요청 추가 (GUI 처리를 위해)
         self.event_queue.put({
             "type": "order_request",
-            "table_index": table_index,
-            "message": order_detail,
-            "response": response
+            "table_index": request.table_index,
+            "message": request.order_detail,
+            "response": response,
         })
 
-        # 대기 - GUI에서 response가 설정될 때까지
-        while not response.success and not response.message:
-            rclpy.spin_once(self, timeout_sec=0.1)
-
-        # 로그로 처리 결과 출력
-        if response.success:
-            self.get_logger().info(f"Order for Table {table_index} processed successfully.")
-        else:
-            self.get_logger().info(f"Order for Table {table_index} was rejected or failed.")
-
+        # 주문 처리 완료
+        self.process_order(request.table_index, request.order_detail, response)
         return response
+
+    def process_order(self, table_index, order_detail, response):
+        """주문 처리 및 응답 설정"""
+        # 주문 처리 (여기서는 수락 예제로 처리)
+        response.success = True
+        response.message = f"Order for Table {table_index} accepted."
+        self.get_logger().info(response.message)
+
+        # 요청 처리 완료 상태 업데이트
+        self.is_processing_request = False
+
+    def check_response(self, table_index, response):
+        """response 상태를 비동기로 확인"""
+        if response.success:
+            # 응답 처리 완료
+            self.get_logger().info(f"Order processed for Table {table_index}. Response: {response.message}")
+            self.is_processing_request = False  # 요청 처리 완료 플래그 설정
+            return  # 함수 종료로 반복 중단
+
+        # response가 아직 처리되지 않은 경우, 다시 확인
+        self.create_timer(0.1, lambda: self.check_response(table_index, response))
+
 
     def accept_order_callback(self, table_index, message):
         """주문 수락 처리."""
@@ -437,7 +464,7 @@ def main():
 
     # ROS2 실행기 스레드 시작
     executor = rclpy.executors.MultiThreadedExecutor()
-    executor_thread = threading.Thread(target=executor.spin, args=())
+    executor_thread = threading.Thread(target=executor.spin, daemon=True)
     executor.add_node(node)
     executor_thread.start()
 
@@ -446,12 +473,12 @@ def main():
     root.mainloop()
 
 def on_close(node, executor, executor_thread):
-    """종료 처리."""
     executor.shutdown()
     executor_thread.join()
     node.destroy_node()
     rclpy.shutdown()
     sys.exit(0)
+
 
 
 
