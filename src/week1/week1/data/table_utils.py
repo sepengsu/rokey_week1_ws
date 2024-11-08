@@ -45,17 +45,13 @@ class Show:
     
 class Delete:
     '''
-    주문을 취소하기 위한 작업
+    주문을 끝내고 취소하기 위한 버튼 
     '''
     def delete_table_order(self, table_id):
         ''' 테이블 주문 정보 삭제 '''
         cur_table = CurrentTable()
         cur_table.del_table_order_all(table_id)
         cur_table.close()
-        # 역사에서도 삭제
-        total_table = TotalTable()
-        total_table.del_table_order_all(table_id)
-        total_table.close()
         return f"{table_id}번 테이블 주문 정보가 삭제되었습니다."
     
 class Insert:

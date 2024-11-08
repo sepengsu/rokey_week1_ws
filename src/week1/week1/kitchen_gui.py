@@ -178,14 +178,6 @@ class KitGUI:
             if table_index in self.timers:
                 del self.timers[table_index]
 
-            # 테이블 라벨 업데이트
-            table_label = self.table_labels[table_index]
-            table_label.config(text=f"테이블 {table_index}\n주문 없음")
-
-            # FIFO 큐에서 제거
-            self.orders = [order for order in self.orders if order["table"] != table_index]
-            self.update_fifo_listbox()
-
             # response 업데이트
             response.success = False
             response.message = f"Order for Table {table_index} rejected. Reason: {reason}"
@@ -247,6 +239,7 @@ class KitGUI:
                 order["eta"] = eta
                 break
         self.update_fifo_listbox()
+
     def complete_order(self, table_index):
         """주문 완료 처리."""
         if table_index not in self.table_labels:
@@ -293,7 +286,19 @@ class KitGUI:
         """운반 작업 확인 팝업."""
         response = messagebox.askokcancel("운반 확인", f"{number}번에 운반하겠습니까?")
         if response:
-             self.node.navigate_to_goals([number - 1])
+             # 주문 큐와 currenttable에서 해당 데이터 삭제
+            for order in self.orders:
+                if order["table"] == number:
+                    self.orders.remove(order)
+                    print(f"Order for Table {number}가 주문 큐에서 삭제되었습니다.")
+                    self.update_fifo_listbox()
+                    break
+            # 테이블 주문에서 해당 데이터 삭제
+            delete = Delete()
+            delete.delete_table_order(number)
+            # 테이블 주문 현황 업데이트
+            self.table_labels[number].config(text=f"테이블 {number}\n주문 없음")
+            self.node.navigate_to_goals([number - 1])
 
     def show_today_sales(self):
         """오늘의 매출 팝업."""
