@@ -1,14 +1,19 @@
 import sqlite3
 
 def create_current_table_orders_db():
+    '''
+    (오더 id, 테이블 번호, 메뉴 아이디, 수량, 주문 시간)을 저장하는 데이터베이스 테이블 생성
+    pk는 오더 id
+    '''
     conn = sqlite3.connect("./src/week1/current_table_orders.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS current_table_orders (
+            order_id INTEGER PRIMARY KEY AUTOINCREMENT,
             table_id INTEGER,
             menu_id STRING,
             quantity INTEGER,
-            order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP PRIMARY KEY 
+            order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP 
         )
     """)
     conn.commit()
@@ -16,6 +21,10 @@ def create_current_table_orders_db():
     print("current_table_orders.db 생성 완료")
 
 def create_full_order_history_db():
+    '''
+    (오더 id, 테이블 번호, 메뉴 아이디, 수량, 주문 시간)을 저장하는 데이터베이스 테이블 생성
+    pk는 오더 id
+    '''
     conn = sqlite3.connect("./src/week1/full_order_history.db")
     cursor = conn.cursor()
     cursor.execute("""
@@ -24,7 +33,7 @@ def create_full_order_history_db():
             table_id INTEGER,
             menu_id STRING,
             quantity INTEGER,
-            order_time TIMESTAMP
+            order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     conn.commit()

@@ -1,6 +1,7 @@
 import pandas as pd
 from .cur_table import CurrentTable
 from .total_table import TotalTable
+import time
 
 menu_items = [
     ("오색 샐러드", 12000, "채소 종류"),
@@ -61,6 +62,22 @@ class Insert:
     '''
     주문을 추가하기 위한 작업
     '''
+    def insert_table_orders(self,table_id:int,order:str):
+        ''' 주문 정보 전처리
+        주문 정보: 
+        (메뉴 아이디, 수량)
+        (메뉴 아이디, 수량) ...
+
+        0. 주문
+        1. 주문 정보를 줄 단위로 나누기
+        2. 메뉴 아이디와 수량 나누기
+        3. 테이블에 
+        '''
+        order_list = order.split("\n")
+        for i in range(len(order_list)):
+            menu_id,quantity = order_list[i][1:-1].split(",")
+
+
     def insert_table_order(self, table_id, menu_id, quantity):
         ''' 테이블 주문 정보 추가 '''
         cur_table = CurrentTable()

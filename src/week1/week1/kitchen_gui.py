@@ -1,40 +1,36 @@
 import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
-sys.path.append("/home/jaenote/rokey_ros/src/week1")
-import rclpy
 import threading
-from rclpy.node import Node
-from ros_msgs.srv import OrderService  # OrderService 서비스 메시지 임포트
-from tkinter import Toplevel
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import Toplevel, messagebox
+import queue  # GUI와 Node 간 이벤트 전달용 큐
+import rclpy
+from rclpy.node import Node
 from .data.table_utils import Show, Insert, Delete
-import sqlite3
-import time
-
+from ros_msgs.srv import OrderService  # OrderService 서비스 메시지 임포트
+from std_msgs.msg import String
+from geometry_msgs.msg import PoseWithCovarianceStamped, Pose, Point, Quaternion
+from nav2_msgs.action import NavigateToPose
+from nav2_msgs.srv import SetInitialPose
+from rclpy.action.client import GoalStatus
+from std_msgs.msg import String
+from rclpy.action import ActionClient
 
 class KitGUI:
-    def __init__(self, root):
+    def __init__(self, root, node, event_queue):
         self.root = root
+        self.node = node  # Node 참조
+        self.event_queue = event_queue  # 이벤트 큐
         self.root.title("테이블 및 좌석 현황 GUI")
         self.root.geometry("1600x1000")
 
-        self.orders = []  # FIFO 큐: {"table": 테이블 번호, "order_detail": 주문 내용, "eta": 남은 시간}
+        self.orders = []  # FIFO 큐
         self.timers = {}  # 테이블별 타이머 저장
         self.table_labels = {}  # 테이블 번호와 Label 매핑
-        self.condition = threading.Condition()  # ROS2 서비스 응답을 위한 조건 변수
 
         # 테이블 주문 현황 표시 프레임
         self.main_frame = tk.Frame(self.root, borderwidth=2, relief="solid")
         self.main_frame.grid(row=0, column=0, padx=10, pady=10)
-
-        # 데이터베이스에서 테이블 주문 정보 불러오기
         self.display_table_orders()
-
-        # 메인 그리드 라벨
-        self.main_label = tk.Label(self.root, text="테이블별 주문 현황", font=("Arial", 14))
-        self.main_label.grid(row=1, column=0, pady=5)
 
         # FIFO 주문 큐 표시
         self.fifo_frame = tk.Frame(self.root, borderwidth=2, relief="solid")
@@ -44,40 +40,35 @@ class KitGUI:
         self.fifo_listbox = tk.Listbox(self.fifo_frame, height=15, width=30)
         self.fifo_listbox.pack(padx=10, pady=10)
 
-        # 3x3 숫자 버튼을 위한 프레임 (FIFO 오른쪽에 배치)
+        # 숫자 버튼 생성 (3x3)
         self.seat_frame = tk.Frame(self.root, borderwidth=2, relief="solid")
         self.seat_frame.grid(row=0, column=2, padx=10, pady=10, sticky="n")
-
-        # 3x3 숫자 버튼 생성
         self.create_number_buttons(3, 3)
 
-        # "오늘의 매출" 버튼 생성
+        # "오늘의 매출" 버튼
         self.sales_button = tk.Button(self.root, text="오늘의 매출", font=("Arial", 14), command=self.show_today_sales)
         self.sales_button.grid(row=2, column=0, columnspan=3, pady=10)
 
-    # 주문 관련 함수
+        # 주기적으로 이벤트 큐 확인
+        self.poll_events()
+
     def display_table_orders(self):
-        """테이블 라벨 생성 및 초기화."""
+        """테이블 주문 현황 초기화."""
         for i in range(3):
             for j in range(3):
                 table_index = i * 3 + j + 1
-
-                # 테이블 라벨 생성 및 저장
                 table_label = tk.Label(self.main_frame, text=f"테이블 {table_index}\n주문 없음",
                                        width=15, height=5, borderwidth=1, relief="solid")
                 table_label.grid(row=i, column=j, padx=5, pady=5)
-                self.table_labels[table_index] = table_label  # 딕셔너리에 저장
+                self.table_labels[table_index] = table_label
 
-    
-        # 주문관련 함수  
-    def show_order_popup(self, table_index, message):
-        """주문 요청 팝업 창."""
-        # 팝업 창 생성
+    def show_order_popup(self, table_index, message, response):
+        """주문 요청 팝업."""
         popup = Toplevel(self.root)
         popup.geometry("400x200")
         popup.title(f"Table {table_index}에서의 새 주문 요청")
 
-        # 주문 메시지 레이블
+        # 주문 메시지 표시
         label = tk.Label(popup, text=message, font=("Arial", 12))
         label.pack(pady=10)
 
@@ -85,32 +76,34 @@ class KitGUI:
         button_frame = tk.Frame(popup)
         button_frame.pack(pady=10)
 
-        # 수락 버튼 생성 (accept_order 호출)
+        # 수락 버튼
         accept_button = tk.Button(
             button_frame,
             text="수락",
-            command=lambda: self.handle_accept_order(table_index, message, popup)
+            command=lambda: self.handle_accept_order(table_index, message, popup, response)
         )
         accept_button.pack(side="left", padx=5)
 
-        # 거절 버튼 생성 (cancel_order 호출)
+        # 거절 버튼
         reject_button = tk.Button(
             button_frame,
             text="거절",
-            command=lambda: self.handle_cancel_order(table_index, popup))
+            command=lambda: self.handle_reject_order(table_index, popup, response)
+        )
         reject_button.pack(side="right", padx=5)
-    def handle_accept_order(self, table_index, message, popup):
+
+    def handle_accept_order(self, table_index, message, popup, response):
         """주문 수락 처리."""
-        popup.destroy()  # 팝업 닫기
-        self.accept_order(table_index, message)  # 주문 수락 처리
+        popup.destroy()
+        self.accept_order(table_index, message)
         
-        # ROS2 서비스 응답 설정
-        with self.condition:
-            self.condition.notify()
-    def handle_cancel_order(self, table_index, popup):
-        """주문 거절 처리."""
-        popup.destroy()  # 팝업 닫기
-        self.cancel_order(table_index)  # 주문 취소 처리
+        # response 설정
+        response.success = True
+        response.message = f"Order for Table {table_index} accepted."
+        self.node.get_logger().info(response.message)
+
+
+    
     def accept_order(self, table_index, order_detail):
         """주문 수락 및 타이머 시작."""
         if table_index not in self.table_labels:
@@ -131,15 +124,22 @@ class KitGUI:
 
         # 주문 정보 데이터베이스에 저장
         insert = Insert()
-        insert.insert_table_order(table_index, order_detail, time.strftime('%Y-%m-%d %H:%M:%S'))
+        insert.insert_table_orders(table_index, order_detail)
 
-        # ROS2 서비스 응답
-        self.response = (True, f"테이블 {table_index}의 주문이 수락되었습니다. 예상 소요 시간: 10분.")
-        
-        # ROS2 서비스 응답 설정
-        with self.condition:
-            self.condition.notify()
-    def cancel_order(self, table_index):
+
+
+    def handle_reject_order(self, table_index, popup, response):
+        """주문 거절 처리."""
+        popup.destroy()
+        self.cancel_order(table_index,)
+
+        # response 설정
+        response.success = False
+        response.message = f"Order for Table {table_index} rejected. Reason: {self.reason}"
+        self.node.get_logger().info(response.message)
+
+    
+    def cancel_order(self, table_index, response):
         """주문 취소."""
         if table_index not in self.table_labels:
             print(f"[ERROR] Invalid table index: {table_index}")
@@ -147,23 +147,49 @@ class KitGUI:
 
         # 팝업 창 생성
         popup = Toplevel(self.root)
-        popup.geometry("300x200")
+        popup.geometry("300x250")
         popup.title(f"테이블 {table_index} 주문 취소")
 
         # 안내 레이블
         label = tk.Label(popup, text="취소 사유를 선택하세요:", font=("Arial", 12))
         label.pack(pady=10)
 
-        # 버튼 프레임
-        button_frame = tk.Frame(popup)
-        button_frame.pack(pady=10)
+        # 선택된 사유를 저장할 변수
+        selected_reason = tk.StringVar(value="")
 
         # 취소 사유 리스트
         reasons = ["재료 부족", "고객 요청", "기타"]
 
-        def handle_reason(reason):
-            """취소 사유를 처리."""
+        def handle_reason_select(reason):
+            """사유 선택 시 호출."""
+            selected_reason.set(reason)
+
+        # 취소 사유 버튼 생성
+        for reason in reasons:
+            reason_button = tk.Radiobutton(
+                popup,
+                text=reason,
+                variable=selected_reason,
+                value=reason,
+                font=("Arial", 10),
+                anchor="w"
+            )
+            reason_button.pack(anchor="w", padx=10, pady=2)
+
+        # 버튼 프레임
+        button_frame = tk.Frame(popup)
+        button_frame.pack(pady=20)
+
+        def handle_confirm():
+            """확인 버튼 동작."""
+            reason = selected_reason.get().strip()
+            if not reason:
+                messagebox.showerror("오류", "취소 사유를 선택하세요.")
+                return
+
+            # 팝업 창 닫기
             popup.destroy()
+
             # 타이머 제거
             if table_index in self.timers:
                 del self.timers[table_index]
@@ -176,24 +202,20 @@ class KitGUI:
             self.orders = [order for order in self.orders if order["table"] != table_index]
             self.update_fifo_listbox()
 
-            # 데이터베이스에서 주문 삭제
-            delete = Delete()
-            delete.delete_table_order(table_index)
+            # response 업데이트
+            response.success = False
+            response.message = f"Order for Table {table_index} rejected. Reason: {reason}"
+            self.node.get_logger().info(response.message)
 
-            # ROS2 서비스 응답
-            self.response = (False, f"테이블 {table_index}의 주문이 취소되었습니다. 사유: {reason}")
-            with self.condition:
-                self.condition.notify()
+        # 확인 버튼
+        confirm_button = tk.Button(button_frame, text="확인", command=handle_confirm, width=10)
+        confirm_button.pack(side="left", padx=10)
 
-        # 취소 사유 버튼 생성
-        for reason in reasons:
-            reason_button = tk.Button(
-                button_frame,
-                text=reason,
-                command=lambda r=reason: handle_reason(r),
-                width=20
-            )
-            reason_button.pack(pady=5)
+        # 취소 버튼
+        cancel_button = tk.Button(button_frame, text="취소", command=popup.destroy, width=10)
+        cancel_button.pack(side="right", padx=10)
+
+
     def start_timer(self, table_index, eta):
         """타이머 시작."""
         def countdown():
@@ -207,6 +229,7 @@ class KitGUI:
 
         self.root.after(60000, countdown)
         return countdown
+
     def update_order_eta(self, table_index, eta):
         """ETA 업데이트."""
         if table_index not in self.table_labels:
@@ -237,10 +260,24 @@ class KitGUI:
         self.fifo_listbox.delete(0, tk.END)
         for order in self.orders:
             self.fifo_listbox.insert(tk.END, f"테이블 {order['table']} - {order['order_detail']} - ETA: {order['eta']}분")
+    
+    def poll_events(self):
+        """이벤트 큐 확인."""
+        try:
+            while True:
+                event = self.event_queue.get_nowait()
+                if event["type"] == "order_request":
+                    self.show_order_popup(event["table_index"], event["message"], event["response"])
+        except queue.Empty:
+            pass
+        finally:
+            # 100ms마다 큐 확인
+            self.root.after(100, self.poll_events)
 
-    # 운송 관련 함수
+
+
     def create_number_buttons(self, rows, cols):
-        """숫자 버튼을 생성합니다."""
+        """숫자 버튼 생성."""
         for i in range(rows):
             for j in range(cols):
                 num = i * cols + j + 1
@@ -249,91 +286,173 @@ class KitGUI:
                 button.grid(row=i, column=j, padx=5, pady=5)
 
     def prompt_transport(self, number):
-        """운반 작업 확인 창을 엽니다."""
+        """운반 작업 확인 팝업."""
         response = messagebox.askokcancel("운반 확인", f"{number}번에 운반하겠습니까?")
         if response:
-            print(f"{number}번에 운반합니다.")
-        '''
-        운반 관련 action을 수행하는 코드를 여기에 추가
-        '''
-
+             self.node.navigate_to_goals([number - 1])
 
     def show_today_sales(self):
-        """오늘의 매출을 표시하는 창을 띄웁니다."""
-        # SQLite에서 오늘의 매출 데이터를 가져오기
-        # conn = sqlite3.connect("orders.db")
-        # cursor = conn.cursor()
-
-        # # 오늘 날짜 가져오기
-        # today = time.strftime('%Y-%m-%d')
-        # query = f"SELECT SUM(amount) FROM sales WHERE date(created_at) = '{today}'"
-
-        # try:
-        #     cursor.execute(query)
-        #     total_sales = cursor.fetchone()[0] or 0  # 매출 합계 (없으면 0으로 표시)
-        # except sqlite3.OperationalError as e:
-        #     total_sales = 0
-        #     print(f"Database error: {e}")
-
-        # conn.close()
-        total_sales = 1000
-
-        # 매출 표시 팝업 창
+        """오늘의 매출 팝업."""
+        total_sales = 1000  # 임시 매출 데이터
         popup = Toplevel(self.root)
         popup.geometry("300x150")
         popup.title("오늘의 매출")
-
         label = tk.Label(popup, text=f"오늘의 매출: {total_sales} 원", font=("Arial", 14))
         label.pack(pady=20)
-
         close_button = tk.Button(popup, text="닫기", command=popup.destroy)
         close_button.pack(pady=10)
 
+
 class KitNode(Node):
-    def __init__(self, gui: KitGUI):
+    def __init__(self, event_queue):
         super().__init__("kit_node")
-        self.gui = gui
+        self.event_queue = event_queue  # GUI와 통신할 이벤트 큐
         self.order_service = self.create_service(OrderService, 'order_service', self.handle_order_request)
 
+        # Action client
+        self.len = 10
+        self.init_pose = [-2.0, -0.5, 0.0, 1.0]
+        self.goal_poses = [
+            [0.8, 0.6], [0.7, -0.3], [0.9, -0.7], [0.068, 1.4], [0.0417, -0.41], 
+            [-0.02, -1.47], [-1.23, 1.396], [-1.5, -0.088], [-1.16, -1.42], [-1.79, -0.292]
+        ]
+
+        self.publisher = self.create_publisher(String, 'navigation_feedback', 10)
+        self.set_initial_pose_service_client = self.create_client(SetInitialPose, '/set_initial_pose')
+        self.navigate_to_pose_action_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
+
+        while not self.set_initial_pose_service_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Service /set_initial_pose not available, waiting again...')
+
+        self.set_initial_pose(*self.init_pose)
+        self.starting_position = self.init_pose[:2]
+
+        self.current_goal_index = 0
+        self.selected_goals = []
+
+    def set_initial_pose(self, x, y, z, w):
+        req = SetInitialPose.Request()
+        req.pose.header.frame_id = 'map'
+        req.pose.pose.pose.position = Point(x=x, y=y, z=0.0)
+        req.pose.pose.pose.orientation = Quaternion(x=0.0, y=0.0, z=z, w=w)
+        req.pose.pose.covariance = [0.1] * 36
+        future = self.set_initial_pose_service_client.call_async(req)
+        self.get_logger().info("[INFO] Initial pose set.")
+        return future.result()
+
+    def navigate_to_goals(self, goals):
+        self.selected_goals = goals
+        self.current_goal_index = 0
+        self.navigate_to_selected_goal()
+
+    def navigate_to_selected_goal(self):
+        if self.current_goal_index < len(self.selected_goals):
+            goal_index = self.selected_goals[self.current_goal_index]
+            self.navigate_to_pose_send_goal(goal_index)
+        else:
+            self.return_to_start()
+
+    def navigate_to_pose_send_goal(self, goal_index):
+        goal_msg = NavigateToPose.Goal()
+        goal_msg.pose.header.frame_id = "map"
+        goal_msg.pose.pose.position.x = self.goal_poses[goal_index][0]
+        goal_msg.pose.pose.position.y = self.goal_poses[goal_index][1]
+        goal_msg.pose.pose.orientation.w = 1.0
+        send_goal_future = self.navigate_to_pose_action_client.send_goal_async(goal_msg)
+        send_goal_future.add_done_callback(self.on_goal_reached)
+
+    def on_goal_reached(self, future):
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            self.get_logger().info("[WARN] Action goal rejected.")
+            return
+        self.get_logger().info("[INFO] Action goal accepted.")
+        action_result_future = goal_handle.get_result_async()
+        action_result_future.add_done_callback(self.on_goal_finished)
+
+    def on_goal_finished(self, future):
+        action_status = future.result().status
+        if action_status == GoalStatus.STATUS_SUCCEEDED:
+            self.get_logger().info("[INFO] Reached goal.")
+            self.current_goal_index += 1
+            self.navigate_to_selected_goal()
+        else:
+            self.get_logger().warn(f"[WARN] Navigation failed with status: {action_status}")
+            self.return_to_start()
+
+    def return_to_start(self):
+        self.get_logger().info("[INFO] Returning to start...")
+        return_goal_msg = NavigateToPose.Goal()
+        return_goal_msg.pose.header.frame_id = "map"
+        return_goal_msg.pose.pose.position.x = self.starting_position[0]
+        return_goal_msg.pose.pose.position.y = self.starting_position[1]
+        return_goal_msg.pose.pose.orientation.w = 1.0
+        self.navigate_to_pose_action_client.send_goal_async(return_goal_msg)
+
     def handle_order_request(self, request, response):
-        """주문 요청 처리."""
+        """ROS2 서비스 요청 처리."""
         table_index = request.table_index
         order_detail = request.order_detail
 
-        # GUI에서 주문 요청 팝업 표시
-        self.gui.show_order_popup(table_index, order_detail)
+        # GUI에 이벤트 전달 (response 포함)
+        self.event_queue.put({
+            "type": "order_request",
+            "table_index": table_index,
+            "message": order_detail,
+            "response": response
+        })
 
-        # GUI 응답 대기
-        with self.gui.condition:
-            self.gui.condition.wait()  # 응답이 설정될 때까지 대기
+        # 대기 - GUI에서 response가 설정될 때까지
+        while not response.success and not response.message:
+            rclpy.spin_once(self, timeout_sec=0.1)
 
-        # 응답 설정
-        response.success, response.message = self.gui.response
-        print(f"ROS2 응답: {response}")
+        # 로그로 처리 결과 출력
+        if response.success:
+            self.get_logger().info(f"Order for Table {table_index} processed successfully.")
+        else:
+            self.get_logger().info(f"Order for Table {table_index} was rejected or failed.")
+
         return response
+
+    def accept_order_callback(self, table_index, message):
+        """주문 수락 처리."""
+        self.get_logger().info(f"Order accepted for Table {table_index}: {message}")
+
+    def reject_order_callback(self, table_index):
+        """주문 거절 처리."""
+        self.get_logger().info(f"Order rejected for Table {table_index}")
+
+    def transport_to_table(self, table_index):
+        """테이블로 운반."""
+        self.get_logger().info(f"Transporting to Table {table_index}")
 
 
 def main():
     rclpy.init()
 
     root = tk.Tk()
-    gui = KitGUI(root)
-    kit_node = KitNode(gui)
+    event_queue = queue.Queue()
+    node = KitNode(event_queue)
+    gui = KitGUI(root, node, event_queue)
 
+    # ROS2 실행기 스레드 시작
     executor = rclpy.executors.MultiThreadedExecutor()
-    executor.add_node(kit_node)
+    executor_thread = threading.Thread(target=executor.spin, args=())
+    executor.add_node(node)
+    executor_thread.start()
 
-    thread_executor = threading.Thread(target=executor.spin)
-    thread_executor.start()
-
-    root.protocol("WM_DELETE_WINDOW", lambda: on_close(kit_node, executor))
+    # GUI 실행
+    root.protocol("WM_DELETE_WINDOW", lambda: on_close(node, executor, executor_thread))
     root.mainloop()
 
-def on_close(node, executor):
+def on_close(node, executor, executor_thread):
+    """종료 처리."""
     executor.shutdown()
+    executor_thread.join()
     node.destroy_node()
     rclpy.shutdown()
     sys.exit(0)
+
 
 
 if __name__ == "__main__":
