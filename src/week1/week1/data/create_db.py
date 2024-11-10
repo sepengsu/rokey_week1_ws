@@ -11,7 +11,7 @@ def create_current_table_orders_db():
         CREATE TABLE IF NOT EXISTS current_table_orders (
             order_id INTEGER PRIMARY KEY AUTOINCREMENT,
             table_id INTEGER,
-            menu_id STRING,
+            menu_id TEXT,
             quantity INTEGER,
             order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP 
         )
@@ -31,7 +31,7 @@ def create_full_order_history_db():
         CREATE TABLE IF NOT EXISTS full_order_history (
             order_id INTEGER PRIMARY KEY AUTOINCREMENT,
             table_id INTEGER,
-            menu_id STRING,
+            menu_id TEXT,
             quantity INTEGER,
             order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )

@@ -1,11 +1,11 @@
 import sys
 import threading
 import tkinter as tk
-from tkinter import Toplevel, messagebox
+from tkinter import Toplevel, messagebox, ttk
 import queue  # GUI와 Node 간 이벤트 전달용 큐
 import rclpy
 from rclpy.node import Node
-from .data.table_utils import Show, Insert, Delete
+from .data import Show, Insert, Delete, Statics
 from ros_msgs.srv import OrderService  # OrderService 서비스 메시지 임포트
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseWithCovarianceStamped, Pose, Point, Quaternion
@@ -14,6 +14,7 @@ from nav2_msgs.srv import SetInitialPose
 from rclpy.action.client import GoalStatus
 from std_msgs.msg import String
 from rclpy.action import ActionClient
+from tkinter import font as tkFont
 
 class KitGUI:
     def __init__(self, root, node, event_queue):
@@ -27,6 +28,10 @@ class KitGUI:
         self.timers = {}  # 테이블별 타이머 저장
         self.table_labels = {}  # 테이블 번호와 Label 매핑
 
+        self.show_main()
+        self.poll_events()
+    
+    def show_main(self):
         # 테이블 주문 현황 표시 프레임
         self.main_frame = tk.Frame(self.root, borderwidth=2, relief="solid")
         self.main_frame.grid(row=0, column=0, padx=10, pady=10)
@@ -45,20 +50,21 @@ class KitGUI:
         self.seat_frame.grid(row=0, column=2, padx=10, pady=10, sticky="n")
         self.create_number_buttons(3, 3)
 
-        # "오늘의 매출" 버튼
-        self.sales_button = tk.Button(self.root, text="오늘의 매출", font=("Arial", 14), command=self.show_today_sales)
-        self.sales_button.grid(row=2, column=0, columnspan=3, pady=10)
-
-        # 주기적으로 이벤트 큐 확인
-        self.poll_events()
+        # 오늘의 매출 표시 버튼
+        self.sales_button = tk.Button(self.root, text="오늘의 매출", font=("Arial", 12), command=self.show_today_sales)
+        self.sales_button.grid(row=1, column=0, padx=10, pady=10)
 
     def display_table_orders(self):
-        """테이블 주문 현황 초기화."""
+        """테이블 주문 현황 표시."""
+        text_list = Show().show_cur_table_orders()
         for i in range(3):
             for j in range(3):
                 table_index = i * 3 + j + 1
-                table_label = tk.Label(self.main_frame, text=f"테이블 {table_index}\n주문 없음",
-                                       width=15, height=5, borderwidth=1, relief="solid")
+                table_label = tk.Button(self.main_frame, text=text_list[table_index - 1], 
+                                        font=("Arial", 10),
+                                       width=15, height=5, 
+                                       borderwidth=1, relief="solid",
+                                       command=lambda n=table_index: self.pay(n))
                 table_label.grid(row=i, column=j, padx=5, pady=5)
                 self.table_labels[table_index] = table_label
 
@@ -103,6 +109,8 @@ class KitGUI:
         response.message = f"Order for Table {table_index} accepted."
         self.node.get_logger().info(response.message)
 
+        # 테이블 상태 업데이트
+        self.display_table_orders()
 
     
     def accept_order(self, table_index, order_detail):
@@ -125,7 +133,7 @@ class KitGUI:
 
         # 주문 정보 데이터베이스에 저장
         insert = Insert()
-        insert.insert_table_orders(table_index, order_detail)
+        insert.insert_cur_table_orders(table_index, order_detail)
 
 
 
@@ -241,13 +249,16 @@ class KitGUI:
         self.update_fifo_listbox()
 
     def complete_order(self, table_index):
-        """주문 완료 처리."""
+        """
+        주문 완료 처리.
+        1. 주문 Queue에서 해당 주문 삭제
+        """
         if table_index not in self.table_labels:
             print(f"[ERROR] Invalid table index: {table_index}")
             return
+        
+        self.display_table_orders()
 
-        table_label = self.table_labels[table_index]
-        table_label.config(text=f"테이블 {table_index}\n주문 없음")
     def update_fifo_listbox(self):
         """FIFO 큐 GUI 업데이트."""
         self.fifo_listbox.delete(0, tk.END)
@@ -293,21 +304,81 @@ class KitGUI:
                     print(f"Order for Table {number}가 주문 큐에서 삭제되었습니다.")
                     self.update_fifo_listbox()
                     break
-            # 테이블 주문에서 해당 데이터 삭제
-            delete = Delete()
-            delete.delete_table_order(number)
             # 테이블 주문 현황 업데이트
-            self.table_labels[number].config(text=f"테이블 {number}\n주문 없음")
             self.node.navigate_to_goals([number - 1])
+
+    def pay(self, table_index):
+        popup = Toplevel(self.root)
+        popup.geometry("300x150")
+        popup.title(f"Table {table_index} 결제")
+        label = tk.Label(popup, text=f"{table_index}번 테이블 결제.", font=("Arial", 14))
+        label.pack(pady=20)
+        close_button = tk.Button(popup, text="닫기", command=popup.destroy)
+        close_button.pack(pady=10)
+
+        # 역사 db에서 현재 테이블 주문을 추가
+        insert = Insert()
+        com = insert.insert_total_table_orders(table_index)
+        if com is None:
+            errorpopup = Toplevel(self.root)
+            errorpopup.geometry("300x150")
+            errorpopup.title(f"Table {table_index} 결제")
+            errorlabel = tk.Label(errorpopup, text=f"{table_index}번 주문 정보 없습니다.", font=("Arial", 14))
+            errorlabel.pack(pady=20)
+            close_button = tk.Button(errorpopup, text="닫기", command=errorpopup.destroy)
+            close_button.pack(pady=10)
+            return
+        # 주문 정보 삭제
+        delete = Delete()
+        delete.delete_table_order(table_index)
+
+        # 테이블 주문 현황 업데이트
+        self.display_table_orders()
 
     def show_today_sales(self):
         """오늘의 매출 팝업."""
-        total_sales = 1000  # 임시 매출 데이터
         popup = Toplevel(self.root)
-        popup.geometry("300x150")
+        popup.geometry("800x800")
         popup.title("오늘의 매출")
-        label = tk.Label(popup, text=f"오늘의 매출: {total_sales} 원", font=("Arial", 14))
-        label.pack(pady=20)
+
+        # 오늘 날짜의 주문 정보를 가져옴
+        st = Statics()
+        df = st.show_table_today()
+        if isinstance(df, str):  # DataFrame이 없을 때
+            label = tk.Label(popup, text=df, font=("Arial", 12))  # 팝업 창에 메시지 표시
+            label.pack(pady=20)
+            close_button = tk.Button(popup, text="닫기", command=popup.destroy)
+            close_button.pack(pady=10)
+            return
+
+        # 분석된 데이터와 결과를 가져옴
+        anay_df, total_quantity, total_sales = st.analyze_df(df)
+
+
+        # Treeview 생성
+        tree = ttk.Treeview(popup, columns=list(anay_df.columns), show="headings", height=10)
+        style = ttk.Style()
+        style.configure("Treeview", rowheight=50)
+
+        for col in anay_df.columns:
+            tree.column(col, width=200, anchor="center")
+            tree.heading(col, text=col, anchor="center")
+
+        # 데이터프레임 데이터를 Treeview에 삽입
+        for _, row in anay_df.iterrows():
+            tree.insert("", "end", values=list(row))
+        tree.pack(pady=1)
+
+        # 총 판매량과 매출 표시
+        summary_label = tk.Label(
+            popup,
+            text=f"총 판매량: {total_quantity}개\n총 매출: {total_sales} 원",
+            font=("Arial", 12),
+            justify="center",
+        )
+        summary_label.pack(pady=20)
+
+        # 닫기 버튼
         close_button = tk.Button(popup, text="닫기", command=popup.destroy)
         close_button.pack(pady=10)
 
