@@ -15,6 +15,7 @@ from rclpy.action.client import GoalStatus
 from std_msgs.msg import String
 from rclpy.action import ActionClient
 from tkinter import font as tkFont
+import playsound
 
 class KitGUI:
     def __init__(self, root, node, event_queue):
@@ -23,6 +24,8 @@ class KitGUI:
         self.event_queue = event_queue  # 이벤트 큐
         self.root.title("테이블 및 좌석 현황 GUI")
         self.root.geometry("1600x1000")
+        # 배경 색상을 흰색으로 설정
+        self.root.config(bg="white")
 
         self.orders = []  # FIFO 큐
         self.timers = {}  # 테이블별 타이머 저장
@@ -35,23 +38,24 @@ class KitGUI:
         # 테이블 주문 현황 표시 프레임
         self.main_frame = tk.Frame(self.root, borderwidth=2, relief="solid")
         self.main_frame.grid(row=0, column=0, padx=10, pady=10)
+        
         self.display_table_orders()
 
         # FIFO 주문 큐 표시
-        self.fifo_frame = tk.Frame(self.root, borderwidth=2, relief="solid")
+        self.fifo_frame = tk.Frame(self.root, borderwidth=2, relief="solid", bg="#FFEDDB")  
         self.fifo_frame.grid(row=0, column=1, padx=10, pady=10, sticky="n")
-        self.fifo_label = tk.Label(self.fifo_frame, text="주문 큐", font=("Arial", 14))
+        self.fifo_label = tk.Label(self.fifo_frame, text="주문 현황", font=("Arial", 14),bg="white", fg="black")
         self.fifo_label.pack()
         self.fifo_listbox = tk.Listbox(self.fifo_frame, height=15, width=30)
         self.fifo_listbox.pack(padx=10, pady=10)
 
         # 숫자 버튼 생성 (3x3)
-        self.seat_frame = tk.Frame(self.root, borderwidth=2, relief="solid")
+        self.seat_frame = tk.Frame(self.root, borderwidth=2, relief="solid",bg = "white")
         self.seat_frame.grid(row=0, column=2, padx=10, pady=10, sticky="n")
         self.create_number_buttons(3, 3)
 
         # 오늘의 매출 표시 버튼
-        self.sales_button = tk.Button(self.root, text="오늘의 매출", font=("Arial", 12), command=self.show_today_sales)
+        self.sales_button = tk.Button(self.root, text="오늘의 매출", font=("Arial", 12), command=self.show_today_sales, fg="white")
         self.sales_button.grid(row=1, column=0, padx=10, pady=10)
 
     def display_table_orders(self):
@@ -64,6 +68,7 @@ class KitGUI:
                                         font=("Arial", 10),
                                        width=15, height=5, 
                                        borderwidth=1, relief="solid",
+                                        bg="white", fg="black",  # 테이블 버튼 배경을 흰색으로 설정
                                        command=lambda n=table_index: self.pay(n))
                 table_label.grid(row=i, column=j, padx=5, pady=5)
                 self.table_labels[table_index] = table_label
@@ -73,20 +78,25 @@ class KitGUI:
         popup = Toplevel(self.root)
         popup.geometry("400x200")
         popup.title(f"Table {table_index}에서의 새 주문 요청")
+        popup.configure(bg="#FFFBF0")  # 팝업 배경 밝은 색으로 변경
+        playsound.playsound("./src/week1/sound/sound.mp3", False)
 
         # 주문 메시지 표시
-        label = tk.Label(popup, text=message, font=("Arial", 12))
+        label = tk.Label(popup, text=message, font=("Arial", 12),bg="white")
         label.pack(pady=10)
 
         # 버튼 프레임
-        button_frame = tk.Frame(popup)
+        button_frame = tk.Frame(popup, bg="white")
         button_frame.pack(pady=10)
 
         # 수락 버튼
         accept_button = tk.Button(
             button_frame,
             text="수락",
-            command=lambda: self.handle_accept_order(table_index, message, popup, response)
+            command=lambda: self.handle_accept_order(table_index, message, popup, response),
+            bg="green",  # 초록색으로 설정
+            fg="white",  # 글자색을 흰색으로 설정
+            font=("Arial", 12)
         )
         accept_button.pack(side="left", padx=5)
 
@@ -94,7 +104,10 @@ class KitGUI:
         reject_button = tk.Button(
             button_frame,
             text="거절",
-            command=lambda: self.handle_reject_order(table_index, popup, response)
+            command=lambda: self.handle_reject_order(table_index, popup, response),
+            bg="red",  # 빨간색으로 설정
+            fg="white",  # 글자색을 흰색으로 설정
+            font=("Arial", 12)
         )
         reject_button.pack(side="right", padx=5)
 
@@ -261,9 +274,9 @@ class KitGUI:
 
     def update_fifo_listbox(self):
         """FIFO 큐 GUI 업데이트."""
-        self.fifo_listbox.delete(0, tk.END)
+        self.fifo_listbox.delete(0, tk.END) # 리스트박스 초기화
         for order in self.orders:
-            self.fifo_listbox.insert(tk.END, f"테이블 {order['table']} - {order['order_detail']} - ETA: {order['eta']}분")
+            self.fifo_listbox.insert(tk.END, f"테이블 {order['table']} \n {order['order_detail']}\nETA: {order['eta']}분")
     
     def poll_events(self):
         """이벤트 큐를 지속적으로 확인"""
@@ -274,10 +287,7 @@ class KitGUI:
 
                 # 이벤트 처리 (여기서는 주문 팝업 처리)
                 if event["type"] == "order_request":
-                    self.show_order_popup(event["table_index"], event["message"], event["response"])
-
-                # 이벤트 처리 완료 표시
-                self.event_queue.task_done()
+                    self.show_order_popup(event["table_index"], event["message"], event["response"])              
         except queue.Empty:
             pass
         finally:
@@ -290,20 +300,18 @@ class KitGUI:
             for j in range(cols):
                 num = i * cols + j + 1
                 button = tk.Button(self.seat_frame, text=str(num), width=5, height=2,
-                                   command=lambda n=num: self.prompt_transport(n))
+                                   command=lambda n=num: self.prompt_transport(n),
+                                   bg = "lightblue")
                 button.grid(row=i, column=j, padx=5, pady=5)
 
     def prompt_transport(self, number):
         """운반 작업 확인 팝업."""
         response = messagebox.askokcancel("운반 확인", f"{number}번에 운반하겠습니까?")
         if response:
-             # 주문 큐와 currenttable에서 해당 데이터 삭제
-            for order in self.orders:
-                if order["table"] == number:
-                    self.orders.remove(order)
-                    print(f"Order for Table {number}가 주문 큐에서 삭제되었습니다.")
-                    self.update_fifo_listbox()
-                    break
+             # 주문 큐에서 해당 데이터 삭제
+            self.orders = [order for order in self.orders if order["table"] != number]
+            print(f"Order for Table {number}가 주문 큐에서 삭제되었습니다.")
+            self.update_fifo_listbox()
             # 테이블 주문 현황 업데이트
             self.node.navigate_to_goals([number - 1])
 
@@ -398,7 +406,7 @@ class KitNode(Node):
             [-0.02, -1.47], [-1.23, 1.396], [-1.5, -0.088], [-1.16, -1.42], [-1.79, -0.292]
         ]
 
-        self.publisher = self.create_publisher(String, 'navigation_feedback', 10)
+        self.publisher = self.create_publisher(String, 'navigation_feedback', 100)
         self.set_initial_pose_service_client = self.create_client(SetInitialPose, '/set_initial_pose')
         self.navigate_to_pose_action_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
 
@@ -493,6 +501,8 @@ class KitNode(Node):
 
         # 주문 처리 완료
         self.process_order(request.table_index, request.order_detail, response)
+        # 이벤트 큐에서 요청 삭제
+        self.event_queue.task_done()
         return response
 
     def process_order(self, table_index, order_detail, response):
@@ -502,7 +512,7 @@ class KitNode(Node):
         response.message = f"Order for Table {table_index} accepted."
         self.get_logger().info(response.message)
 
-        # 요청 처리 완료 상태 업데이트
+        # 요청 처리 완료 상태 업데이트x
         self.is_processing_request = False
 
     def check_response(self, table_index, response):

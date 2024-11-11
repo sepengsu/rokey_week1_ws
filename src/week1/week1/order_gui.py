@@ -263,7 +263,7 @@ class OrderNode(Node):
         try:
             response = future.result()
             # 응답을 큐에 추가
-            self.response_queue.put((True, response.message))
+            self.response_queue.put((response.success, response.message))
             self.get_logger().info(f"Received response: {response.message}")
         except Exception as e:
             # 에러 응답을 큐에 추가
