@@ -73,19 +73,16 @@ class KitGUI:
                 table_label.grid(row=i, column=j, padx=5, pady=5)
                 self.table_labels[table_index] = table_label
 
-    def show_order_popup(self, table_index, message, response):
+    def show_order_popup(self, table_index, message):
         """주문 요청 팝업"""
         popup = Toplevel(self.root)
         popup.geometry("400x200")
         popup.title(f"Table {table_index}에서의 새 주문 요청")
-        popup.configure(bg="#FFFBF0")  # 팝업 배경 밝은 색으로 변경
-        playsound.playsound("./src/week1/sound/sound.mp3", False)
+        popup.configure(bg="#FFFBF0")
 
-        # 주문 메시지 표시
-        label = tk.Label(popup, text=message, font=("Arial", 12),bg="white")
+        label = tk.Label(popup, text=message, font=("Arial", 12), bg="white")
         label.pack(pady=10)
 
-        # 버튼 프레임
         button_frame = tk.Frame(popup, bg="white")
         button_frame.pack(pady=10)
 
@@ -93,9 +90,9 @@ class KitGUI:
         accept_button = tk.Button(
             button_frame,
             text="수락",
-            command=lambda: self.handle_accept_order(table_index, message, popup, response),
-            bg="green",  # 초록색으로 설정
-            fg="white",  # 글자색을 흰색으로 설정
+            command=lambda: self.handle_accept_order(table_index, message, popup),
+            bg="green",
+            fg="white",
             font=("Arial", 12)
         )
         accept_button.pack(side="left", padx=5)
@@ -104,26 +101,22 @@ class KitGUI:
         reject_button = tk.Button(
             button_frame,
             text="거절",
-            command=lambda: self.handle_reject_order(table_index, popup, response),
-            bg="red",  # 빨간색으로 설정
-            fg="white",  # 글자색을 흰색으로 설정
+            command=lambda: self.handle_reject_order(table_index, popup),
+            bg="red",
+            fg="white",
             font=("Arial", 12)
         )
         reject_button.pack(side="right", padx=5)
 
-
-    def handle_accept_order(self, table_index, message, popup, response):
+    def handle_accept_order(self, table_index, message, popup):
         """주문 수락 처리."""
         popup.destroy()
         self.accept_order(table_index, message)
-        
-        # response 설정
-        response.success = True
-        response.message = f"Order for Table {table_index} accepted."
-        self.node.get_logger().info(response.message)
+        self.node.accept_order_callback(table_index, f"Order for Table {table_index} accepted.")
 
         # 테이블 상태 업데이트
         self.display_table_orders()
+
 
     
     def accept_order(self, table_index, order_detail):
@@ -148,28 +141,18 @@ class KitGUI:
         insert = Insert()
         insert.insert_cur_table_orders(table_index, order_detail)
 
-
-
-    def handle_reject_order(self, table_index, popup, response):
+    def handle_reject_order(self, table_index, popup):
         """주문 거절 처리."""
-        popup.destroy()  # 팝업 닫기
-        self.cancel_order(table_index, response)  # response를 전달
+        popup.destroy()
+        reason = self.cancel_order(table_index)
+        self.node.reject_order_callback(table_index, reason)
 
-        # response 설정
-        response.success = False
-        response.message = f"Order for Table {table_index} rejected."
-        self.node.get_logger().info(response.message)
+        # 테이블 상태 업데이트
+        self.display_table_orders()
 
 
-    
-    def cancel_order(self, table_index, response):
+    def cancel_order(self, table_index):
         """주문 취소."""
-        if table_index not in self.table_labels:
-            print(f"[ERROR] Invalid table index: {table_index}")
-            response.success = False
-            response.message = f"Invalid table index: {table_index}"
-            return
-
         # 팝업 창 생성
         popup = Toplevel(self.root)
         popup.geometry("300x250")
@@ -199,10 +182,8 @@ class KitGUI:
             if table_index in self.timers:
                 del self.timers[table_index]
 
-            # response 업데이트
-            response.success = False
-            response.message = f"Order for Table {table_index} rejected. Reason: {reason}"
-            self.node.get_logger().info(response.message)
+            # 선택된 사유 반환
+            self.res = reason
 
         # 취소 사유 버튼 생성
         for reason in reasons:
@@ -227,6 +208,11 @@ class KitGUI:
         cancel_button = tk.Button(button_frame, text="취소", command=popup.destroy, width=10)
         cancel_button.pack(side="right", padx=10)
 
+        # 대기: 사용자가 선택할 때까지
+        popup.wait_window()
+
+        # 선택된 사유를 반환
+        return self.res if self.res else "취소 이유 없음"
 
 
     def start_timer(self, table_index, eta):
@@ -282,17 +268,16 @@ class KitGUI:
         """이벤트 큐를 지속적으로 확인"""
         try:
             while True:
-                # 큐에서 이벤트를 가져옴
                 event = self.event_queue.get_nowait()
-
-                # 이벤트 처리 (여기서는 주문 팝업 처리)
                 if event["type"] == "order_request":
-                    self.show_order_popup(event["table_index"], event["message"], event["response"])              
+                    self.show_order_popup(event["table_index"], event["message"])
+                else:
+                    self.node.get_logger().warn(f"Unhandled event type: {event['type']}")
         except queue.Empty:
             pass
         finally:
-            # 100ms마다 이벤트 큐 확인
-            self.root.after(100, self.poll_events)
+            self.root.after(100, self.poll_events)  # 100ms마다 이벤트 확인
+
 
     def create_number_buttons(self, rows, cols):
         """숫자 버튼 생성."""
@@ -300,8 +285,8 @@ class KitGUI:
             for j in range(cols):
                 num = i * cols + j + 1
                 button = tk.Button(self.seat_frame, text=str(num), width=5, height=2,
-                                   command=lambda n=num: self.prompt_transport(n),
-                                   bg = "lightblue")
+                                command=lambda n=num: self.prompt_transport(n),
+                                bg = "lightblue")
                 button.grid(row=i, column=j, padx=5, pady=5)
 
     def prompt_transport(self, number):
@@ -397,6 +382,9 @@ class KitNode(Node):
         self.event_queue = event_queue  # GUI와 통신할 이벤트 큐
         self.order_service = self.create_service(OrderService, 'order_service', self.handle_order_request)
         self.is_processing_request = False
+        self.request_queue =queue.Queue()  # 요청 큐 추가
+        self.current_response = None
+        self.response_received = False
 
         # Action client
         self.len = 10
@@ -479,65 +467,77 @@ class KitNode(Node):
         self.navigate_to_pose_action_client.send_goal_async(return_goal_msg)
 
     def handle_order_request(self, request, response):
-        """주문 요청 처리 (동기 처리)"""
-        if self.is_processing_request:
-            # 이미 요청 처리 중인 경우 로그 출력
-            self.get_logger().warn("A request is already being processed. Ignoring new request.")
+        """주문 요청 처리"""
+        if self.current_response is not None:
             response.success = False
-            response.message = "Server busy. Try again later."
+            response.message = "Previous request is still being processed."
+            self.get_logger().warn("Previous request is still being processed.")
             return response
 
-        # 요청 처리 시작
-        self.is_processing_request = True
-        self.get_logger().info(f"Processing request for Table {request.table_index}")
+        self.get_logger().info(f"Received order request for Table {request.table_index}: {request.order_detail}")
 
-        # 이벤트 큐에 요청 추가 (GUI 처리를 위해)
+        # 상태 설정
+        self.current_response = response
+        self.response_received = False
+
+        # GUI 이벤트 큐에 요청 전달
         self.event_queue.put({
             "type": "order_request",
             "table_index": request.table_index,
             "message": request.order_detail,
-            "response": response,
         })
 
-        # 주문 처리 완료
-        self.process_order(request.table_index, request.order_detail, response)
-        # 이벤트 큐에서 요청 삭제
-        self.event_queue.task_done()
+        # 응답 대기
+        timeout = 10.0  # 최대 대기 시간 (초)
+        start_time = self.get_clock().now().nanoseconds / 1e9
+
+        while not self.response_received and (self.get_clock().now().nanoseconds / 1e9 - start_time) < timeout:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        # 응답 처리
+        if self.response_received:
+            response.success = True
+            response.message = "Request processed successfully."
+        else:
+            response.success = False
+            response.message = "Request timed out."
+            self.get_logger().warn(f"Order for Table {request.table_index} timed out.")
+
+        # 상태 초기화
+        self.current_response = None
+        self.response_received = False
+
         return response
 
-    def process_order(self, table_index, order_detail, response):
-        """주문 처리 및 응답 설정"""
-        # 주문 처리 (여기서는 수락 예제로 처리)
-        response.success = True
-        response.message = f"Order for Table {table_index} accepted."
-        self.get_logger().info(response.message)
 
-        # 요청 처리 완료 상태 업데이트x
-        self.is_processing_request = False
-
-    def check_response(self, table_index, response):
-        """response 상태를 비동기로 확인"""
-        if response.success:
-            # 응답 처리 완료
-            self.get_logger().info(f"Order processed for Table {table_index}. Response: {response.message}")
-            self.is_processing_request = False  # 요청 처리 완료 플래그 설정
-            return  # 함수 종료로 반복 중단
-
-        # response가 아직 처리되지 않은 경우, 다시 확인
-        self.create_timer(0.1, lambda: self.check_response(table_index, response))
-
-
+    
     def accept_order_callback(self, table_index, message):
-        """주문 수락 처리."""
-        self.get_logger().info(f"Order accepted for Table {table_index}: {message}")
+        """GUI에서 수락 결과 처리."""
+        if self.current_response:  # current_response가 None이 아닌 경우
+            self.current_response.success = True
+            self.current_response.message = message  # message를 response에 설정
+            self.response_received = True
+            self.get_logger().info(f"Order for Table {table_index} accepted: {message}")
+        else:
+            self.get_logger().error("No active response object to update for accept_order_callback.")
 
-    def reject_order_callback(self, table_index):
-        """주문 거절 처리."""
-        self.get_logger().info(f"Order rejected for Table {table_index}")
+        # 상태 초기화
+        self.response_received = True
+        self.current_response = None
 
-    def transport_to_table(self, table_index):
-        """테이블로 운반."""
-        self.get_logger().info(f"Transporting to Table {table_index}")
+    def reject_order_callback(self, table_index, reason):
+        """GUI에서 거절 결과 처리."""
+        if self.current_response:  # current_response가 None이 아닌 경우
+            self.current_response.success = False
+            self.current_response.message = reason  # reason을 response에 설정
+            self.response_received = True
+            self.get_logger().info(f"Order for Table {table_index} rejected: {reason}")
+        else:
+            self.get_logger().error("No active response object to update for reject_order_callback.")
+
+        self.response_received = True
+        self.current_response = None  # 상태 리셋
+
 
 
 def main():
@@ -548,24 +548,26 @@ def main():
     node = KitNode(event_queue)
     gui = KitGUI(root, node, event_queue)
 
-    # ROS2 실행기 스레드 시작
+    # ROS2 실행기와 Tkinter GUI 실행
     executor = rclpy.executors.MultiThreadedExecutor()
-    executor_thread = threading.Thread(target=executor.spin, daemon=True)
     executor.add_node(node)
+
+    def ros_spin():
+        while rclpy.ok():
+            executor.spin_once(timeout_sec=0.1)
+
+    executor_thread = threading.Thread(target=ros_spin, daemon=True)
     executor_thread.start()
 
-    # GUI 실행
-    root.protocol("WM_DELETE_WINDOW", lambda: on_close(node, executor, executor_thread))
+    def on_close():
+        executor.shutdown()
+        executor_thread.join()
+        node.destroy_node()
+        rclpy.shutdown()
+        root.destroy()
+
+    root.protocol("WM_DELETE_WINDOW", on_close)
     root.mainloop()
-
-def on_close(node, executor, executor_thread):
-    executor.shutdown()
-    executor_thread.join()
-    node.destroy_node()
-    rclpy.shutdown()
-    sys.exit(0)
-
-
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 from queue import Queue
+import queue
 import threading
 import rclpy
 from rclpy.node import Node
@@ -9,12 +10,12 @@ from ros_msgs.srv import OrderService
 from .data.menu import MENU
 
 class KioskGUI:
-    def __init__(self, root, ros_node):
+    def __init__(self, root, resposne_queue,ros_node):
         self.root = root
         self.root.title("Self-Order Kiosk")
         self.root.geometry("1200x800")
         self.ros_node = ros_node
-        self.response_queue = Queue()
+        self.response_queue = resposne_queue
 
         self.cart = {}
         self.total_price = 0
@@ -204,71 +205,88 @@ class KioskGUI:
         else:
             messagebox.showerror("입력 오류", "유효한 테이블 번호를 입력하세요.")
 
+    
+    def poll_events(self):
+        """이벤트 큐를 지속적으로 확인"""
+        try:
+            while True:
+                # 큐에서 이벤트를 가져옴
+                event = self.response_queue.get_nowait()
+
+                # 이벤트 처리 (여기서는 주문 팝업 처리)
+                if event["type"] == "order_request":
+                    self.show_order_popup(event["table_index"], event["message"], event["response"])              
+        except queue.Empty:
+            pass
+        finally:
+            # 100ms마다 이벤트 큐 확인
+            self.root.after(100, self.poll_events)
+    
+    def show_order_popup(self, table_index, order_detail, response):
+        popup = tk.Toplevel()
+        popup.title("Order Status")
+        popup.geometry("300x150")
+        popup.resizable(False, False)
+        popup.configure(bg="#f0f0f0")
+        if response.success:
+            messagebox.showinfo("Order Status", f"Table {table_index} Order: {order_detail}\nAccepted!")
+        else:
+            messagebox.showerror("Order Status", f"Table {table_index} Order: {order_detail}\nRejected!\n{response.message}")
+        
+        # 닫기 버튼
+        close_button = tk.Button(popup, text="닫기", command=popup.destroy)
+        close_button.pack(pady=10)
+
 
 class OrderNode(Node):
     def __init__(self, response_queue: Queue):
         super().__init__('order_client')
         self.client = self.create_client(OrderService, 'order_service')
         self.response_queue = response_queue
+        self.current_request = None  # 현재 요청 상태 관리
         while not self.client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Waiting for service...')
 
     def send_order_request(self, cart_data: dict, table_index: int):
+        """
+        주문 데이터를 ROS2 서비스로 비동기 전송하는 함수
+        """
+        # 요청이 진행 중인 경우 처리
+        if self.current_request:
+            self.get_logger().warning("Previous request is still being processed.")
+            return
+
         message = "\n".join([f"({item_name}, {quantity})" for item_name, (price, quantity) in cart_data.items()])
 
+        # 요청 생성
         request = OrderService.Request()
         request.table_index = table_index
         request.order_detail = message
 
         self.get_logger().info(f"Sending order request: Table {table_index}, Order: {message}")
-        future = self.client.call_async(request)
-        future.add_done_callback(self.handle_response)
+
+        # 비동기 호출
+        self.current_request = self.client.call_async(request)
+        self.current_request.add_done_callback(self.handle_response)
 
     def handle_response(self, future):
+        """
+        ROS2 서비스 비동기 응답을 처리하는 함수
+        """
         try:
-            response = future.result()
-            self.response_queue.put((True, response.message))
-            self.get_logger().info(f"Received response: {response.message}")
+            response = future.result()  # 응답 받기
+            if response.success:
+                self.response_queue.put((True, response.message))
+                self.get_logger().info(f"Order accepted: {response.message}")
+            else:
+                self.response_queue.put((False, response.message))
+                self.get_logger().info(f"Order rejected: {response.message}")
         except Exception as e:
             self.response_queue.put((False, f"Service call failed: {e}"))
             self.get_logger().error(f"Service call failed: {e}")
-
-
-class OrderNode(Node):
-    def __init__(self, response_queue: Queue):
-        super().__init__('order_client')
-        self.client = self.create_client(OrderService, 'order_service')
-        self.response_queue = response_queue  # 큐 참조 저장
-        while not self.client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('Waiting for service...')
-
-    def send_order_request(self, cart_data: dict, table_index: int):
-        """서버로 주문 요청을 보냅니다."""
-        # 주문 상세 메시지 생성
-        message = "\n".join([f"({item_name}, {quantity})" for item_name, (price, quantity) in cart_data.items()])
-
-        # OrderService 요청 생성
-        request = OrderService.Request()
-        request.table_index = table_index  # GUI에서 전달된 테이블 번호 사용
-        request.order_detail = message
-
-        # 비동기 서비스 호출
-        self.get_logger().info(f"Sending order request: Table {table_index}, Order: {message}")
-        future = self.client.call_async(request)
-        future.add_done_callback(self.handle_response)
-
-
-    def handle_response(self, future):
-        """서버로부터 응답을 처리합니다."""
-        try:
-            response = future.result()
-            # 응답을 큐에 추가
-            self.response_queue.put((response.success, response.message))
-            self.get_logger().info(f"Received response: {response.message}")
-        except Exception as e:
-            # 에러 응답을 큐에 추가
-            self.response_queue.put((False, f"Service call failed: {e}"))
-            self.get_logger().error(f"Service call failed: {e}")
+        finally:
+            # 현재 요청 상태 초기화
+            self.current_request = None
 
 
 def main():
@@ -283,7 +301,7 @@ def main():
     
     # Tkinter GUI 초기화
     root = tk.Tk()
-    kiosk_gui = KioskGUI(root, ros_node)  # KioskGUI 인스턴스 생성
+    kiosk_gui = KioskGUI(root, response_queue,ros_node)  # KioskGUI 인스턴스 생성
     
     # ROS2 노드를 별도의 스레드에서 실행
     ros_thread = threading.Thread(target=rclpy.spin, args=(ros_node,))
