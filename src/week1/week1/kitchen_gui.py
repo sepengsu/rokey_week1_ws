@@ -468,7 +468,7 @@ class KitNode(Node):
 
     def handle_order_request(self, request, response):
         """주문 요청 처리"""
-        if self.current_response is not None:
+        if self.current_response is not None:  # 이전 요청 처리 중
             response.success = False
             response.message = "Previous request is still being processed."
             self.get_logger().warn("Previous request is still being processed.")
@@ -476,7 +476,7 @@ class KitNode(Node):
 
         self.get_logger().info(f"Received order request for Table {request.table_index}: {request.order_detail}")
 
-        # 상태 설정
+        # 새로운 요청 설정
         self.current_response = response
         self.response_received = False
 
@@ -487,8 +487,8 @@ class KitNode(Node):
             "message": request.order_detail,
         })
 
-        # 응답 대기
-        timeout = 10.0  # 최대 대기 시간 (초)
+        # 응답 대기 (비동기적으로 처리)
+        timeout = 100.0  # 최대 대기 시간 (초)
         start_time = self.get_clock().now().nanoseconds / 1e9
 
         while not self.response_received and (self.get_clock().now().nanoseconds / 1e9 - start_time) < timeout:
@@ -497,7 +497,8 @@ class KitNode(Node):
         # 응답 처리
         if self.response_received:
             response.success = True
-            response.message = "Request processed successfully."
+            response.message = self.current_response.message
+            self.get_logger().info(f"Order processed successfully for Table {request.table_index}.")
         else:
             response.success = False
             response.message = "Request timed out."
@@ -510,33 +511,30 @@ class KitNode(Node):
         return response
 
 
-    
     def accept_order_callback(self, table_index, message):
         """GUI에서 수락 결과 처리."""
         if self.current_response:  # current_response가 None이 아닌 경우
             self.current_response.success = True
-            self.current_response.message = message  # message를 response에 설정
+            self.current_response.message = message
             self.response_received = True
             self.get_logger().info(f"Order for Table {table_index} accepted: {message}")
         else:
             self.get_logger().error("No active response object to update for accept_order_callback.")
+        self.get_logger().info(f"accept_order_callback called for Table {table_index}")
 
-        # 상태 초기화
-        self.response_received = True
-        self.current_response = None
 
     def reject_order_callback(self, table_index, reason):
         """GUI에서 거절 결과 처리."""
         if self.current_response:  # current_response가 None이 아닌 경우
             self.current_response.success = False
-            self.current_response.message = reason  # reason을 response에 설정
+            self.current_response.message = reason  # 거절 사유를 메시지에 설정
             self.response_received = True
             self.get_logger().info(f"Order for Table {table_index} rejected: {reason}")
         else:
             self.get_logger().error("No active response object to update for reject_order_callback.")
+        self.get_logger().info(f"reject_order_callback called for Table {table_index} with reason: {reason}")
 
-        self.response_received = True
-        self.current_response = None  # 상태 리셋
+
 
 
 
@@ -548,8 +546,7 @@ def main():
     node = KitNode(event_queue)
     gui = KitGUI(root, node, event_queue)
 
-    # ROS2 실행기와 Tkinter GUI 실행
-    executor = rclpy.executors.MultiThreadedExecutor()
+    executor = rclpy.executors.MultiThreadedExecutor(num_threads=4)
     executor.add_node(node)
 
     def ros_spin():
@@ -568,7 +565,6 @@ def main():
 
     root.protocol("WM_DELETE_WINDOW", on_close)
     root.mainloop()
-
 
 if __name__ == "__main__":
     main()
